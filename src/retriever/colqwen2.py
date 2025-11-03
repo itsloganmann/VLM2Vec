@@ -4,7 +4,13 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import torch
-from transformers import AutoModel, AutoProcessor
+from transformers import (
+    AutoFeatureExtractor,
+    AutoImageProcessor,
+    AutoModel,
+    AutoProcessor,
+    AutoTokenizer,
+)
 
 from .base import BaseRetriever, BatchOutput
 
@@ -29,7 +35,7 @@ class ColQwen2Retriever(BaseRetriever):
         super().__init__(model_id=model_id, **kwargs)
 
     def _load_model(self) -> None:  # pragma: no cover - heavy dependency
-        self.processor = AutoProcessor.from_pretrained(self.model_id, trust_remote_code=True)
+        self.processor = self._load_processor()
         self.model = AutoModel.from_pretrained(
             self.model_id,
             trust_remote_code=True,
@@ -39,6 +45,65 @@ class ColQwen2Retriever(BaseRetriever):
         self.model.eval()
         self.embedding_dim = getattr(self.model.config, "hidden_size", self.synthetic_dim)
         logger.info("Loaded ColQwen2 model with embedding dim %s", self.embedding_dim)
+
+    def _load_processor(self) -> Any:  # pragma: no cover - heavy dependency
+        try:
+            processor = AutoProcessor.from_pretrained(self.model_id, trust_remote_code=True)
+            logger.info("Loaded AutoProcessor for %s", self.model_id)
+            return processor
+        except ValueError as err:
+            logger.warning("AutoProcessor unavailable for %s: %s", self.model_id, err)
+
+        tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True)
+        image_processor: Optional[Any] = None
+
+        loaders = (AutoImageProcessor, AutoFeatureExtractor)
+        last_error: Optional[Exception] = None
+        for loader in loaders:
+            try:
+                image_processor = loader.from_pretrained(self.model_id, trust_remote_code=True)
+                logger.info("Loaded %s for %s", loader.__name__, self.model_id)
+                break
+            except Exception as exc:  # pragma: no cover - loader availability
+                last_error = exc
+        if image_processor is None:
+            raise RuntimeError(
+                "Failed to construct image processor for ColQwen2; last error: %s" % last_error
+            )
+
+        class _HybridProcessor:
+            def __init__(self, tok, img):
+                self.tokenizer = tok
+                self.image_processor = img
+
+            def __call__(self, text: Optional[Any] = None, images: Optional[Any] = None, return_tensors: str = "pt"):
+                outputs: Dict[str, Any] = {}
+                if text is not None:
+                    if isinstance(text, str):
+                        text_inputs: Any = [text]
+                    else:
+                        text_inputs = text
+                    outputs.update(
+                        self.tokenizer(
+                            text_inputs,
+                            padding=True,
+                            truncation=True,
+                            return_tensors=return_tensors,
+                        )
+                    )
+                if images is not None:
+                    outputs.update(
+                        self.image_processor(
+                            images=images,
+                            return_tensors=return_tensors,
+                        )
+                    )
+                if not outputs:
+                    raise ValueError("ColQwen2 processor received no inputs")
+                return outputs
+
+        logger.info("Constructed hybrid processor (tokenizer + image processor) for %s", self.model_id)
+        return _HybridProcessor(tokenizer, image_processor)
 
     # ------------------------------------------------------------------
     # Embedding helpers
