@@ -160,6 +160,7 @@ Alongside the core VLM2Vec release, this repository now ships with a Colab-first
 ### Highlights
 
 - **Retriever implementations** for Vidore ColQwen2.5, NVIDIA NemoRetriever Colembed 3B, and Nomic ColNomic 3B, including hybrid multi-/single-vector support.
+- **Processor resilience** that automatically patches ColQwen2 pre-processing (no manual `sed` or config tweaks required in Colab).
 - **Scoring utilities** implementing MaxSim late interaction, hybrid scoring, static padding, and optional hierarchical token compression.
 - **Caching and resume tooling** with SHA-256 keyed Torch caches, disk persistence, and Google Drive-friendly resume metadata.
 - **Evaluation harness** that pre-encodes candidates, streams MMEB-V2 partitions, and aggregates Precision@1 metrics with CSV/JSON exports.

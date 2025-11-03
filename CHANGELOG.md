@@ -12,6 +12,9 @@ All notable changes to this project will be documented in this file.
 ## ![bug-fix] 2025-07-31
 - Updated the MomentSeeker task by deduplicating some test cases. More details in this [issue](https://github.com/TIGER-AI-Lab/VLM2Vec/issues/123#issuecomment-3141653760).
 
+## ![bug-fix] 2025-11-03
+- ColQwen2 retriever now auto-loads the Qwen2VL image processor when the Hugging Face hub metadata omits it, eliminating the need for manual `sed` adjustments in Colab workflows.
+
 ## ![new-release] 2025-06-03
 
 ### Released v2.0.0.
