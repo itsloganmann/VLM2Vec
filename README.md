@@ -175,6 +175,8 @@ Alongside the core VLM2Vec release, this repository now ships with a Colab-first
    pip install -e .
    ```
 
+  > Verify `transformers` resolves to **4.57.1 or newer**; older wheels (≤4.44) do not ship the Qwen2VL image processor required by ColQwen2.
+
 2. **Run the synthetic integration tests** to verify the environment:
 
    ```bash
@@ -211,6 +213,7 @@ outputs/
 ### Colab Workflow Highlights
 
 - Verifies GPU capability, pins CUDA-enabled PyTorch, Transformers (with `trust_remote_code`), and model-specific dependencies.
+- Uses Transformers 4.57.1+ so the official Qwen2VL image processor is available without manual patches.
 - Mounts Google Drive, prepares `/content/work`, persists caches/logs between sessions, and provides resume hints.
 - Materialises project files, prepares smoke/full config presets, and emits metrics in JSON/CSV plus an optional zipped bundle of artefacts.
 
