@@ -1,4 +1,4 @@
-# Full MMEB-V2 evaluation schedule for Colab A100 40 GB
+# Full MMEB-V2 evaluation schedule for Colab A100 40/80 GB
 run:
   name: mmeb-a100-full
   precision: bf16

@@ -180,7 +180,7 @@ Alongside the core VLM2Vec release, this repository now ships with a Colab-first
    pytest
    ```
 
-3. **Open the Colab notebook** `notebooks/run_mmeb_eval.ipynb`, choose an A100 40 GB runtime (L4 fallback guidance provided), and execute the cells end to end.
+3. **Open the Colab notebook** `notebooks/run_mmeb_eval.ipynb`, choose an NVIDIA A100 runtime (40 GB or 80 GB; L4 fallback guidance provided), and execute the cells end to end.
 
 ### Repository Layout
 
