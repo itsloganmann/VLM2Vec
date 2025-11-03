@@ -1,0 +1,107 @@
+# Quick smoke preset for validation and constrained GPUs
+run:
+  name: mmeb-quick-smoke
+  precision: bf16
+  quick_subset:
+    enabled: true
+    max_queries: 4
+    max_candidates: 64
+  output_root: "${OUTPUT_ROOT}"
+  cache_root: "${CACHE_ROOT}"
+  log_root: "${LOG_ROOT}"
+  metrics_root: "${METRICS_ROOT}"
+  profiler_root: "${PROFILER_ROOT}"
+  resume_state: "${PERSIST_ROOT}/outputs/resume_state.yaml"
+  pad_to_static: true
+
+models:
+  - alias: colqwen2
+    id: vidore/colqwen2.5-v0.2
+    implementation: retriever.colqwen2.ColQwen2Retriever
+    vector_mode: multi
+    dtype: bf16
+    image_resolution: 384
+    patch_budget: 1024
+    query_batch_size: 2
+    document_batch_size: 4
+    calibration: true
+    pooling: none
+  - alias: nemoretriever
+    id: nvidia/llama-nemoretriever-colembed-3b-v1
+    implementation: retriever.nemoretriever.NemoRetriever
+    vector_mode: multi
+    dtype: bf16
+    image_resolution: 352
+    patch_budget: 1024
+    query_batch_size: 2
+    document_batch_size: 3
+    calibration: true
+    pooling: none
+  - alias: colnomic
+    id: nomic-ai/colnomic-embed-multimodal-3b
+    implementation: retriever.colnomic.ColNomicRetriever
+    vector_mode: hybrid
+    dtype: bf16
+    image_resolution: 352
+    patch_budget: 1024
+    query_batch_size: 2
+    document_batch_size: 3
+    calibration: true
+    pooling: mean
+    output_format: multi
+    fallback_output_format: single
+
+data:
+  repo_id: TIGER-Lab/MMEB-V2
+  local_root: "${DATA_ROOT}"
+  download: true
+  streaming: false
+  num_workers: 2
+  quick_sample_per_task: 32
+  image_column: image
+  text_column: text
+  tasks:
+    - name: mmeb_visual_document_smoke
+      type: visual_document
+      subset: docvqa
+      split: validation
+      id_column: query_id
+      query_column: query
+      image_column: image
+      positive_column: positive_ids
+      candidate_column: candidates
+      max_candidates: 256
+
+scoring:
+  shard_size: 64
+  chunk_size: 16
+  pad_to_static: true
+  pad_multiple: 8
+  dtype: bf16
+  warn_if_fp32: true
+  memory_guard_gb: 22
+
+memory:
+  cache_root: "${CACHE_ROOT}"
+  dtype: bf16
+  pin_memory: true
+  cpu_offload: true
+  checkpoint_stride: 1
+
+monitoring:
+  profiler: false
+  memory_summary: true
+  log_interval: 5
+  record_batch_stats: true
+
+safety:
+  max_wall_clock_minutes: 45
+  max_gpu_memory_gb: 22
+  min_precision: bf16
+  allow_fallback_precision: true
+
+artifacts:
+  save_reports: true
+  json_path: "${METRICS_ROOT}/mmeb_smoke_metrics.json"
+  csv_path: "${METRICS_ROOT}/mmeb_smoke_metrics.csv"
+  zip_bundle: "${PERSIST_ROOT}/outputs/mmeb_smoke_reports.zip"

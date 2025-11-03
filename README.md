@@ -150,3 +150,70 @@ DDP inference on multiple GPUs is supported. The whole evaluation process is str
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=TIGER-AI-Lab/VLM2Vec&type=Date)](https://star-history.com/#TIGER-AI-Lab/VLM2Vec&Date)
+
+---
+
+## Multi-Vector Retriever Evaluation Add-on
+
+Alongside the core VLM2Vec release, this repository now ships with a Colab-first workflow focused on reproducing the "More Retriever Implementations for Latest Multi-Vector Models" effort. It delivers production-grade retriever wrappers, a resumable MMEB-V2 benchmarking harness, pinned configuration presets, and rigorous validation for multi-vector scoring.
+
+### Highlights
+
+- **Retriever implementations** for Vidore ColQwen2.5, NVIDIA NemoRetriever Colembed 3B, and Nomic ColNomic 3B, including hybrid multi-/single-vector support.
+- **Scoring utilities** implementing MaxSim late interaction, hybrid scoring, static padding, and optional hierarchical token compression.
+- **Caching and resume tooling** with SHA-256 keyed Torch caches, disk persistence, and Google Drive-friendly resume metadata.
+- **Evaluation harness** that pre-encodes candidates, streams MMEB-V2 partitions, and aggregates Precision@1 metrics with CSV/JSON exports.
+- **Automated tests** (pytest) covering retriever contracts, deterministic MaxSim maths, cache integrity, and an end-to-end synthetic pipeline.
+- **Colab notebook** (`notebooks/run_mmeb_eval.ipynb`) that provisions dependencies, validates hardware, and orchestrates smoke/full evaluations.
+
+### Quick Start
+
+1. **Install dependencies** (Python ≥ 3.10):
+
+   ```bash
+   pip install -e .
+   ```
+
+2. **Run the synthetic integration tests** to verify the environment:
+
+   ```bash
+   pytest
+   ```
+
+3. **Open the Colab notebook** `notebooks/run_mmeb_eval.ipynb`, choose an A100 40 GB runtime (L4 fallback guidance provided), and execute the cells end to end.
+
+### Repository Layout
+
+```
+configs/
+  mmeb_a100_full.yaml       # Full A100 evaluation preset
+  mmeb_quick_smoke.yaml     # Smoke preset for validation / L4 fallback
+src/retriever/
+  base.py                   # Abstract retriever base class
+  colqwen2.py               # Vidore ColQwen2 multi-vector wrapper
+  nemoretriever.py          # NVIDIA Nemo multi-vector wrapper
+  colnomic.py               # Nomic ColNomic hybrid retriever
+  scoring.py                # MaxSim, dot-product, hybrid scorers
+  memory.py                 # Cache + resume utilities
+  compression.py            # Optional hierarchical pooling
+  __init__.py
+evaluation/
+  multi_vector_eval.py      # MMEB-V2 benchmarking harness
+tests/
+  ...                       # Retriever, scoring, cache, and pipeline coverage
+notebooks/
+  run_mmeb_eval.ipynb       # Colab entrypoint orchestrating the workflow
+outputs/
+  .gitkeep                  # Cache / report directory (ignored by git)
+```
+
+### Colab Workflow Highlights
+
+- Verifies GPU capability, pins CUDA-enabled PyTorch, Transformers (with `trust_remote_code`), and model-specific dependencies.
+- Mounts Google Drive, prepares `/content/work`, persists caches/logs between sessions, and provides resume hints.
+- Materialises project files, prepares smoke/full config presets, and emits metrics in JSON/CSV plus an optional zipped bundle of artefacts.
+
+### Git and Licensing Notes
+
+- The workflow assumes this repository is available via `git clone` inside Colab. Update remote URLs as needed if working from a fork.
+- Licensing follows the upstream VLM2Vec project; see `LICENSE` in the repository root once synced.

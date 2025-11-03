@@ -1,0 +1,119 @@
+# Full MMEB-V2 evaluation schedule for Colab A100 40 GB
+run:
+  name: mmeb-a100-full
+  precision: bf16
+  quick_subset:
+    enabled: false
+    max_queries: 0
+    max_candidates: 0
+  output_root: "${OUTPUT_ROOT}"
+  cache_root: "${CACHE_ROOT}"
+  log_root: "${LOG_ROOT}"
+  metrics_root: "${METRICS_ROOT}"
+  profiler_root: "${PROFILER_ROOT}"
+  resume_state: "${PERSIST_ROOT}/outputs/resume_state.yaml"
+  pad_to_static: true
+
+models:
+  - alias: colqwen2
+    id: vidore/colqwen2.5-v0.2
+    implementation: retriever.colqwen2.ColQwen2Retriever
+    vector_mode: multi
+    dtype: bf16
+    image_resolution: 560
+    patch_budget: 2048
+    query_batch_size: 8
+    document_batch_size: 12
+    calibration: true
+    pooling: none
+  - alias: nemoretriever
+    id: nvidia/llama-nemoretriever-colembed-3b-v1
+    implementation: retriever.nemoretriever.NemoRetriever
+    vector_mode: multi
+    dtype: bf16
+    image_resolution: 448
+    patch_budget: 2048
+    query_batch_size: 6
+    document_batch_size: 10
+    calibration: true
+    pooling: none
+  - alias: colnomic
+    id: nomic-ai/colnomic-embed-multimodal-3b
+    implementation: retriever.colnomic.ColNomicRetriever
+    vector_mode: hybrid
+    dtype: bf16
+    image_resolution: 448
+    patch_budget: 2048
+    query_batch_size: 8
+    document_batch_size: 12
+    calibration: true
+    pooling: none
+    output_format: multi
+    fallback_output_format: single
+
+data:
+  repo_id: TIGER-Lab/MMEB-V2
+  local_root: "${DATA_ROOT}"
+  download: true
+  streaming: false
+  num_workers: 4
+  quick_sample_per_task: 64
+  image_column: image
+  text_column: text
+  tasks:
+    - name: mmeb_visual_document
+      type: visual_document
+      subset: docvqa
+      split: validation
+      id_column: query_id
+      query_column: query
+      image_column: image
+      positive_column: positive_ids
+      candidate_column: candidates
+      max_candidates: 2048
+    - name: mmeb_image_text
+      type: image_text
+      subset: retrieval
+      split: validation
+      id_column: query_id
+      query_column: query
+      image_column: image
+      positive_column: positive_ids
+      candidate_column: candidates
+      max_candidates: 2048
+
+scoring:
+  shard_size: 256
+  chunk_size: 32
+  pad_to_static: true
+  pad_multiple: 8
+  dtype: bf16
+  warn_if_fp32: true
+  memory_guard_gb: 36
+  pad_strategy: static
+
+memory:
+  cache_root: "${CACHE_ROOT}"
+  dtype: bf16
+  pin_memory: true
+  cpu_offload: true
+  checkpoint_stride: 1
+
+monitoring:
+  profiler: true
+  profiler_schedule: warmup=1,active=3,wait=1
+  memory_summary: true
+  log_interval: 20
+  record_batch_stats: true
+
+safety:
+  max_wall_clock_minutes: 180
+  max_gpu_memory_gb: 38
+  min_precision: bf16
+  allow_fallback_precision: true
+
+artifacts:
+  save_reports: true
+  json_path: "${METRICS_ROOT}/mmeb_metrics.json"
+  csv_path: "${METRICS_ROOT}/mmeb_metrics.csv"
+  zip_bundle: "${PERSIST_ROOT}/outputs/mmeb_reports.zip"
