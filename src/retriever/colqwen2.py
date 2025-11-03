@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import torch
 from transformers import (
@@ -121,10 +121,38 @@ class ColQwen2Retriever(BaseRetriever):
 			for attr in ("image_processor", "vision_processor", "image_processors")
 		)
 
+	def _load_tokenizer(self) -> Any:
+		errors: List[Exception] = []
+		for use_fast in (True, False):
+			try:
+				tokenizer = AutoTokenizer.from_pretrained(
+					self.model_id,
+					trust_remote_code=True,
+					use_fast=use_fast,
+				)
+				logger.info(
+					"Loaded %s tokenizer for %s (use_fast=%s)",
+					type(tokenizer).__name__,
+					self.model_id,
+					use_fast,
+				)
+				return tokenizer
+			except Exception as exc:  # pragma: no cover - depends on HF/tokenizers versions
+				errors.append(exc)
+				logger.warning(
+					"Failed to load tokenizer for %s with use_fast=%s: %s",
+					self.model_id,
+					use_fast,
+					exc,
+				)
+		last_error = errors[-1] if errors else RuntimeError("unknown tokenizer error")
+		raise RuntimeError(
+			f"Failed to construct tokenizer for ColQwen2 ({self.model_id}); last error: {last_error}"
+		)
+
 	def _build_hybrid_processor(self, tokenizer: Optional[Any] = None) -> _HybridProcessor:
 		if tokenizer is None:
-			tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True)
-			logger.info("Loaded AutoTokenizer for %s", self.model_id)
+			tokenizer = self._load_tokenizer()
 
 		image_processor = self._load_image_processor()
 		logger.info("Constructed hybrid processor (tokenizer + image processor) for %s", self.model_id)

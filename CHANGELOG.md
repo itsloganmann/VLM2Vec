@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 
 ## ![bug-fix] 2025-11-03
 - ColQwen2 retriever now auto-loads the Qwen2VL image processor when the Hugging Face hub metadata omits it, eliminating the need for manual `sed` adjustments in Colab workflows.
+- Introduced a slow-tokenizer fallback for ColQwen2 when `tokenizers` fast models fail to deserialize on certain Colab wheels, ensuring evaluation continues without manual intervention.
 
 ## ![new-release] 2025-06-03
 
