@@ -4,13 +4,12 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import torch
-from transformers import (
-	AutoFeatureExtractor,
-	AutoImageProcessor,
-	AutoModel,
-	AutoProcessor,
-	AutoTokenizer,
-)
+from transformers import AutoFeatureExtractor, AutoModel, AutoProcessor, AutoTokenizer
+
+try:
+	from transformers import AutoImageProcessor
+except ImportError:  # pragma: no cover - alias removed in newer releases
+	AutoImageProcessor = None  # type: ignore[assignment]
 
 try:  # transformers>=4.42
 	from transformers import Qwen2VLImageProcessor
@@ -159,7 +158,9 @@ class ColQwen2Retriever(BaseRetriever):
 		return _HybridProcessor(tokenizer, image_processor)
 
 	def _load_image_processor(self) -> Any:
-		loaders = (AutoImageProcessor, AutoFeatureExtractor)
+		loaders = tuple(loader for loader in (AutoImageProcessor, AutoFeatureExtractor) if loader is not None)
+		if not loaders:
+			raise RuntimeError("transformers does not provide an image processor loader (AutoImageProcessor/AutoFeatureExtractor)")
 		last_error: Optional[Exception] = None
 
 		for loader in loaders:

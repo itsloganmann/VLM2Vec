@@ -201,21 +201,27 @@ def _materialize_disk_summary(path: Path) -> Dict[str, float]:
     }
 
 
-def _validate_environment(run_cfg: RunConfig) -> None:
+def _validate_environment(run_cfg: RunConfig, *, strict: bool = True) -> None:
     import transformers
 
     torch_version = version.parse(torch.__version__)
     transformers_version = version.parse(transformers.__version__)
     if torch_version < version.parse(MIN_TORCH_VERSION):
-        raise RuntimeError(
+        message = (
             f"Detected torch {torch.__version__}; minimum supported version is {MIN_TORCH_VERSION}. "
             "Refer to https://pytorch.org/get-started/locally/ for upgrade instructions."
         )
+        if strict:
+            raise RuntimeError(message)
+        LOGGER.warning(message)
     if transformers_version < version.parse(MIN_TRANSFORMERS_VERSION):
-        raise RuntimeError(
+        message = (
             f"Detected transformers {transformers.__version__}; minimum supported version is {MIN_TRANSFORMERS_VERSION}. "
             "See https://huggingface.co/docs/transformers/installation for upgrade guidance."
         )
+        if strict:
+            raise RuntimeError(message)
+        LOGGER.warning(message)
     try:
         torch.backends.cuda.matmul.allow_tf32 = True  # type: ignore[attr-defined]
         torch.backends.cudnn.allow_tf32 = True  # type: ignore[attr-defined]
@@ -515,7 +521,7 @@ def run_mmeb_eval(config_path: str | Path, *, dry_run: bool = False) -> Dict[str
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
     LOGGER.info("Starting evaluation run %s", run_cfg.name)
 
-    _validate_environment(run_cfg)
+    _validate_environment(run_cfg, strict=not dry_run)
     prepare_run_folders(run_cfg)
     resume = ResumeManager(Path(run_cfg.resume_state))
     snapshot_paths = _prefetch_model_assets(cfg["models"], run_cfg.model_snapshot_root)
