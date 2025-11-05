@@ -3,8 +3,10 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import math
 import os
 import random
+import shutil
 import time
 from dataclasses import dataclass, field
 from importlib import import_module
@@ -14,8 +16,17 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 import torch
 import yaml
 
+from packaging import version
+
 from retriever import BaseRetriever, scoring
 from retriever.memory import CacheManager, ResumeManager, chunk_iterable, estimate_vram_usage
+
+try:  # pragma: no cover - huggingface-hub optional in tests
+    from huggingface_hub import snapshot_download
+    from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, LocalEntryNotFoundError, RepositoryNotFoundError
+except Exception:  # pragma: no cover - allow unit tests without hub
+    snapshot_download = None  # type: ignore
+    GatedRepoError = RepositoryNotFoundError = HfHubHTTPError = LocalEntryNotFoundError = Exception  # type: ignore
 
 try:  # pragma: no cover - optional dependency
     from datasets import load_dataset
@@ -23,6 +34,11 @@ except Exception:  # pragma: no cover - allow tests without datasets
     load_dataset = None  # type: ignore
 
 LOGGER = logging.getLogger(__name__)
+
+MIN_TRANSFORMERS_VERSION = "4.57.1"
+MIN_TORCH_VERSION = "2.2.1"
+EXPECTED_GPU_SUBSTRING = "A100"
+DEFAULT_MIN_DISK_GB = 40.0
 
 
 @dataclass
@@ -37,6 +53,7 @@ class RunConfig:
     profiler_root: Path = Path("outputs/profiler")
     resume_state: Path = Path("outputs/resume_state.yaml")
     pad_to_static: bool = True
+    model_snapshot_root: Path = Path("outputs/model_snapshots")
 
 
 @dataclass
@@ -54,6 +71,9 @@ class ModelConfig:
     pooling: Optional[str] = None
     output_format: Optional[str] = None
     fallback_output_format: Optional[str] = None
+    snapshot_revision: Optional[str] = None
+    snapshot_allow_patterns: Optional[List[str]] = None
+    snapshot_ignore_patterns: Optional[List[str]] = None
 
 
 @dataclass
@@ -145,6 +165,7 @@ def parse_config(raw: Dict[str, Any]) -> Dict[str, Any]:
     run.metrics_root = Path(run.metrics_root)
     run.profiler_root = Path(run.profiler_root)
     run.resume_state = Path(run.resume_state)
+    run.model_snapshot_root = Path(run.model_snapshot_root)
     data = raw.get("data", {})
     tasks = [TaskConfig(**task) for task in data.get("tasks", [])]
     data_cfg = DataConfig(tasks=tasks, **{k: v for k, v in data.items() if k != "tasks"})
@@ -167,6 +188,112 @@ def parse_config(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _bytes_to_gb(count: int) -> float:
+    return count / (1024 ** 3)
+
+
+def _materialize_disk_summary(path: Path) -> Dict[str, float]:
+    usage = shutil.disk_usage(path)
+    return {
+        "total_gb": _bytes_to_gb(usage.total),
+        "used_gb": _bytes_to_gb(usage.used),
+        "free_gb": _bytes_to_gb(usage.free),
+    }
+
+
+def _validate_environment(run_cfg: RunConfig) -> None:
+    import transformers
+
+    torch_version = version.parse(torch.__version__)
+    transformers_version = version.parse(transformers.__version__)
+    if torch_version < version.parse(MIN_TORCH_VERSION):
+        raise RuntimeError(
+            f"Detected torch {torch.__version__}; minimum supported version is {MIN_TORCH_VERSION}. "
+            "Refer to https://pytorch.org/get-started/locally/ for upgrade instructions."
+        )
+    if transformers_version < version.parse(MIN_TRANSFORMERS_VERSION):
+        raise RuntimeError(
+            f"Detected transformers {transformers.__version__}; minimum supported version is {MIN_TRANSFORMERS_VERSION}. "
+            "See https://huggingface.co/docs/transformers/installation for upgrade guidance."
+        )
+    try:
+        torch.backends.cuda.matmul.allow_tf32 = True  # type: ignore[attr-defined]
+        torch.backends.cudnn.allow_tf32 = True  # type: ignore[attr-defined]
+    except AttributeError:
+        LOGGER.debug("TF32 toggles unavailable in this torch build")
+    try:
+        torch.set_float32_matmul_precision("high")
+    except AttributeError:
+        LOGGER.debug("torch.set_float32_matmul_precision unavailable; continuing")
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        LOGGER.info("Primary GPU: %s", gpu_name)
+        if EXPECTED_GPU_SUBSTRING not in gpu_name:
+            LOGGER.warning("Expected an NVIDIA A100 GPU but detected %s", gpu_name)
+    else:
+        LOGGER.warning("CUDA is not available; evaluation will fall back to CPU and run significantly slower")
+    snapshot_home = run_cfg.model_snapshot_root
+    snapshot_home.mkdir(parents=True, exist_ok=True)
+    summary = _materialize_disk_summary(snapshot_home)
+    if summary["free_gb"] < DEFAULT_MIN_DISK_GB:
+        raise RuntimeError(
+            f"Insufficient free disk space at {snapshot_home} ({summary['free_gb']:.1f} GiB). "
+            "Allocate additional storage or point `run.model_snapshot_root` to a larger volume."
+        )
+    LOGGER.info(
+        "Disk usage at %s -> total %.1f GiB, used %.1f GiB, free %.1f GiB",
+        snapshot_home,
+        summary["total_gb"],
+        summary["used_gb"],
+        summary["free_gb"],
+    )
+    os.environ.setdefault("HF_HOME", str(snapshot_home / "hf_home"))
+    os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(snapshot_home / "hub_cache"))
+    os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
+
+
+def _prefetch_model_assets(models: Sequence[ModelConfig], snapshot_root: Path) -> Dict[str, Path]:
+    if snapshot_download is None:
+        LOGGER.warning("huggingface_hub is unavailable; model snapshots will be fetched lazily")
+        return {}
+    snapshot_root.mkdir(parents=True, exist_ok=True)
+    resolved: Dict[str, Path] = {}
+    for model_cfg in models:
+        target_dir = snapshot_root / model_cfg.alias
+        allow_patterns = model_cfg.snapshot_allow_patterns
+        ignore_patterns = model_cfg.snapshot_ignore_patterns
+        kwargs: Dict[str, Any] = {
+            "repo_id": model_cfg.id,
+            "local_dir": str(target_dir),
+            "local_dir_use_symlinks": False,
+        }
+        if model_cfg.snapshot_revision:
+            kwargs["revision"] = model_cfg.snapshot_revision
+        if allow_patterns:
+            kwargs["allow_patterns"] = allow_patterns
+        if ignore_patterns:
+            kwargs["ignore_patterns"] = ignore_patterns
+        try:
+            snapshot_path = Path(snapshot_download(**kwargs))
+            resolved[model_cfg.alias] = snapshot_path
+            size_gb = _bytes_to_gb(sum(f.stat().st_size for f in snapshot_path.rglob("*") if f.is_file()))
+            LOGGER.info("Prefetched %s to %s (%.2f GiB)", model_cfg.id, snapshot_path, size_gb)
+        except GatedRepoError as exc:
+            LOGGER.error("Access to %s requires authentication: %s", model_cfg.id, exc)
+            raise
+        except RepositoryNotFoundError as exc:
+            LOGGER.error("Model repository %s not found. Verify the identifier.", model_cfg.id)
+            raise
+        except (HfHubHTTPError, LocalEntryNotFoundError) as exc:
+            LOGGER.warning(
+                "Prefetch for %s encountered %s; the run will rely on on-demand downloads.",
+                model_cfg.id,
+                exc,
+            )
+        except Exception as exc:  # pragma: no cover - network dependent
+            LOGGER.warning("Unexpected error while downloading %s: %s", model_cfg.id, exc)
+    return resolved
+
 def prepare_run_folders(run: RunConfig) -> None:
     for path in [
         run.output_root,
@@ -179,12 +306,23 @@ def prepare_run_folders(run: RunConfig) -> None:
         Path(path).mkdir(parents=True, exist_ok=True)
 
 
-def instantiate_retriever(model_cfg: ModelConfig, *, dry_run: bool = False) -> BaseRetriever:
+def instantiate_retriever(
+    model_cfg: ModelConfig,
+    *,
+    dry_run: bool = False,
+    snapshot_paths: Optional[Dict[str, Path]] = None,
+) -> BaseRetriever:
     module_name, _, attr = model_cfg.implementation.rpartition(".")
     module = import_module(module_name)
     cls = getattr(module, attr)
+    resolved_model_id = model_cfg.id
+    if snapshot_paths:
+        local_snapshot = snapshot_paths.get(model_cfg.alias)
+        if local_snapshot is not None:
+            resolved_model_id = str(local_snapshot)
+            LOGGER.info("Loading %s from local snapshot %s", model_cfg.alias, resolved_model_id)
     kwargs: Dict[str, Any] = {
-        "model_id": model_cfg.id,
+        "model_id": resolved_model_id,
         "dtype": torch.bfloat16 if model_cfg.dtype == "bf16" else torch.float16,
         "dry_run": dry_run,
     }
@@ -196,6 +334,12 @@ def instantiate_retriever(model_cfg: ModelConfig, *, dry_run: bool = False) -> B
         "fallback_output_format": model_cfg.fallback_output_format,
     }
     kwargs.update({k: v for k, v in optional.items() if v is not None})
+    cfg_payload = kwargs.get("config") or {}
+    cfg_payload.setdefault("original_model_id", model_cfg.id)
+    cfg_payload.setdefault("alias", model_cfg.alias)
+    if snapshot_paths and model_cfg.alias in snapshot_paths:
+        cfg_payload.setdefault("snapshot_path", resolved_model_id)
+    kwargs["config"] = cfg_payload
     retriever: BaseRetriever = cls(**kwargs)
     return retriever
 
@@ -371,12 +515,14 @@ def run_mmeb_eval(config_path: str | Path, *, dry_run: bool = False) -> Dict[str
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
     LOGGER.info("Starting evaluation run %s", run_cfg.name)
 
+    _validate_environment(run_cfg)
     prepare_run_folders(run_cfg)
     resume = ResumeManager(Path(run_cfg.resume_state))
+    snapshot_paths = _prefetch_model_assets(cfg["models"], run_cfg.model_snapshot_root)
 
     metrics: Dict[str, Any] = {}
     for model_cfg in cfg["models"]:
-        retriever = instantiate_retriever(model_cfg, dry_run=dry_run)
+        retriever = instantiate_retriever(model_cfg, dry_run=dry_run, snapshot_paths=snapshot_paths)
         cache = CacheManager(Path(run_cfg.cache_root))
         model_metrics: Dict[str, Any] = {}
         for task in data_cfg.tasks:
