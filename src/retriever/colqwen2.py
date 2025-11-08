@@ -4,7 +4,12 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import torch
-from transformers import AutoFeatureExtractor, AutoModel, AutoProcessor, AutoTokenizer
+from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
+
+try:
+	from transformers import AutoProcessor
+except ImportError:  # pragma: no cover - older transformers releases
+	AutoProcessor = None  # type: ignore[assignment]
 
 try:
 	from transformers import AutoImageProcessor
@@ -17,6 +22,8 @@ except ImportError:  # pragma: no cover - older transformers versions
 	Qwen2VLImageProcessor = None  # type: ignore[assignment]
 
 from .base import BaseRetriever, BatchOutput
+
+MIN_RECOMMENDED_TRANSFORMERS = "4.57.1"
 
 
 logger = logging.getLogger(__name__)
@@ -98,6 +105,13 @@ class ColQwen2Retriever(BaseRetriever):
 		logger.info("Loaded ColQwen2 model with embedding dim %s", self.embedding_dim)
 
 	def _load_processor(self) -> Any:  # pragma: no cover - heavy dependency
+		if AutoProcessor is None:
+			logger.warning(
+				"transformers.AutoProcessor is unavailable; falling back to hybrid tokenizer/image processor. "
+				"Upgrade transformers to >=%s for full ColQwen2 support.",
+				MIN_RECOMMENDED_TRANSFORMERS,
+			)
+			return self._build_hybrid_processor()
 		try:
 			processor = AutoProcessor.from_pretrained(self.model_id, trust_remote_code=True)
 			if self._processor_has_vision(processor):
@@ -111,7 +125,11 @@ class ColQwen2Retriever(BaseRetriever):
 			)
 			return self._build_hybrid_processor(tokenizer=tokenizer)
 		except Exception as err:
-			logger.warning("AutoProcessor unavailable for %s: %s", self.model_id, err)
+			logger.warning(
+				"AutoProcessor unavailable for %s: %s. Falling back to hybrid tokenizer/image processor.",
+				self.model_id,
+				err,
+			)
 			return self._build_hybrid_processor()
 
 	def _processor_has_vision(self, processor: Any) -> bool:

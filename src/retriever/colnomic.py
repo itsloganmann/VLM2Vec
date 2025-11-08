@@ -4,11 +4,18 @@ import logging
 from typing import Any, Dict, Optional
 
 import torch
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel
+
+try:
+    from transformers import AutoProcessor
+except ImportError:  # pragma: no cover - older transformers releases
+    AutoProcessor = None  # type: ignore[assignment]
 
 from .base import BaseRetriever, BatchOutput
 
 logger = logging.getLogger(__name__)
+
+MIN_RECOMMENDED_TRANSFORMERS = "4.57.1"
 
 
 class ColNomicRetriever(BaseRetriever):
@@ -29,6 +36,11 @@ class ColNomicRetriever(BaseRetriever):
         super().__init__(model_id=model_id, **kwargs)
 
     def _load_model(self) -> None:  # pragma: no cover - heavy dependency
+        if AutoProcessor is None:
+            raise RuntimeError(
+                "transformers.AutoProcessor is unavailable. Upgrade transformers to >=%s to load ColNomic retriever."
+                % MIN_RECOMMENDED_TRANSFORMERS
+            )
         self.processor = AutoProcessor.from_pretrained(self.model_id, trust_remote_code=True)
         self.model = AutoModel.from_pretrained(
             self.model_id,

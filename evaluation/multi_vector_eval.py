@@ -319,7 +319,17 @@ def instantiate_retriever(
     snapshot_paths: Optional[Dict[str, Path]] = None,
 ) -> BaseRetriever:
     module_name, _, attr = model_cfg.implementation.rpartition(".")
-    module = import_module(module_name)
+    try:
+        module = import_module(module_name)
+    except ImportError as exc:
+        missing_symbol = "AutoProcessor" if "AutoProcessor" in str(exc) else None
+        if missing_symbol:
+            raise RuntimeError(
+                "Failed to load %s due to missing transformers.%s. "
+                "Upgrade transformers to >=%s and rerun the installation cell."
+                % (model_cfg.alias, missing_symbol, MIN_TRANSFORMERS_VERSION)
+            ) from exc
+        raise
     cls = getattr(module, attr)
     resolved_model_id = model_cfg.id
     if snapshot_paths:
