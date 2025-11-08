@@ -4,12 +4,17 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import torch
-from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
+import transformers
+from transformers import AutoConfig, AutoFeatureExtractor, AutoModel, AutoTokenizer
 
 try:
 	from transformers import AutoProcessor
 except ImportError:  # pragma: no cover - older transformers releases
 	AutoProcessor = None  # type: ignore[assignment]
+try:
+	from transformers.dynamic_module_utils import get_class_from_dynamic_module
+except ImportError:  # pragma: no cover - older transformers releases
+	get_class_from_dynamic_module = None  # type: ignore[assignment]
 
 try:
 	from transformers import AutoImageProcessor
@@ -94,15 +99,63 @@ class ColQwen2Retriever(BaseRetriever):
 	# ------------------------------------------------------------------
 	def _load_model(self) -> None:  # pragma: no cover - heavy dependency
 		self.processor = self._load_processor()
-		self.model = AutoModel.from_pretrained(
-			self.model_id,
-			trust_remote_code=True,
-			torch_dtype=self.dtype,
-		)
+		try:
+			self.model = AutoModel.from_pretrained(
+				self.model_id,
+				trust_remote_code=True,
+				torch_dtype=self.dtype,
+			)
+		except ValueError as err:
+			self.model = self._load_model_with_dynamic_module(err)
 		self.model.to(self.device)
 		self.model.eval()
 		self.embedding_dim = getattr(self.model.config, "hidden_size", self.synthetic_dim)
 		logger.info("Loaded ColQwen2 model with embedding dim %s", self.embedding_dim)
+
+	def _load_model_with_dynamic_module(self, original_error: Exception) -> Any:
+		message = str(original_error)
+		if "Qwen2_5_VLModel" not in message:
+			raise original_error
+		if get_class_from_dynamic_module is None:
+			raise RuntimeError(
+				"transformers %s is missing Qwen2.5-VL support and cannot load custom code dynamically. "
+				"Upgrade transformers to >=%s."
+				% (transformers.__version__, MIN_RECOMMENDED_TRANSFORMERS)
+			) from original_error
+		config = AutoConfig.from_pretrained(self.model_id, trust_remote_code=True)
+		auto_map = getattr(config, "auto_map", {}) or {}
+		class_reference = auto_map.get("AutoModel")
+		if isinstance(class_reference, (list, tuple)):
+			class_reference = class_reference[0]
+		if not class_reference:
+			raise RuntimeError(
+				"Model %s does not expose an AutoModel auto_map entry. "
+				"Upgrade transformers to >=%s."
+				% (self.model_id, MIN_RECOMMENDED_TRANSFORMERS)
+			) from original_error
+		logger.warning(
+			"AutoModel mapping for Qwen2.5-VL is unavailable in transformers %s; using dynamic module %s.",
+			transformers.__version__,
+			class_reference,
+		)
+		try:
+			model_cls = get_class_from_dynamic_module(
+				class_reference,
+				self.model_id,
+				revision=getattr(config, "_commit_hash", None),
+				trust_remote_code=True,
+			)
+		except Exception as load_err:  # pragma: no cover - network/filesystem dependent
+			raise RuntimeError(
+				"Unable to dynamically import %s from %s. Upgrade transformers to >=%s or pin a revision with bundled code."
+				% (class_reference, self.model_id, MIN_RECOMMENDED_TRANSFORMERS)
+			) from load_err
+		model = model_cls.from_pretrained(
+			self.model_id,
+			trust_remote_code=True,
+			torch_dtype=self.dtype,
+		)
+		return model
 
 	def _load_processor(self) -> Any:  # pragma: no cover - heavy dependency
 		if AutoProcessor is None:
