@@ -1,4 +1,4 @@
-# Quick smoke preset for validation and constrained GPUs
+# Quick smoke preset for validation and constrained GPUs (Nemo retriever only)
 run:
   name: mmeb-quick-smoke
   precision: bf16
@@ -15,17 +15,6 @@ run:
   pad_to_static: true
 
 models:
-  - alias: colqwen2
-    id: vidore/colqwen2.5-v0.2
-    implementation: retriever.colqwen2.ColQwen2Retriever
-    vector_mode: multi
-    dtype: bf16
-    image_resolution: 384
-    patch_budget: 1024
-    query_batch_size: 2
-    document_batch_size: 4
-    calibration: true
-    pooling: none
   - alias: nemoretriever
     id: nvidia/llama-nemoretriever-colembed-3b-v1
     implementation: retriever.nemoretriever.NemoRetriever
@@ -37,19 +26,6 @@ models:
     document_batch_size: 3
     calibration: true
     pooling: none
-  - alias: colnomic
-    id: nomic-ai/colnomic-embed-multimodal-3b
-    implementation: retriever.colnomic.ColNomicRetriever
-    vector_mode: hybrid
-    dtype: bf16
-    image_resolution: 352
-    patch_budget: 1024
-    query_batch_size: 2
-    document_batch_size: 3
-    calibration: true
-    pooling: mean
-    output_format: multi
-    fallback_output_format: single
 
 data:
   repo_id: TIGER-Lab/MMEB-V2

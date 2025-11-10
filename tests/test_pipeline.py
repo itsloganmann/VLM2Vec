@@ -22,9 +22,9 @@ def build_mock_config(tmp_path: Path) -> Path:
         },
         "models": [
             {
-                "alias": "colqwen2",
-                "id": "vidore/colqwen2.5-v0.2",
-                "implementation": "retriever.colqwen2.ColQwen2Retriever",
+                "alias": "nemoretriever",
+                "id": "nvidia/llama-nemoretriever-colembed-3b-v1",
+                "implementation": "retriever.nemoretriever.NemoRetriever",
                 "dtype": "bf16",
                 "query_batch_size": 2,
                 "document_batch_size": 2,
@@ -90,7 +90,7 @@ def build_mock_config(tmp_path: Path) -> Path:
 def test_run_mmeb_eval_smoke(tmp_path):
     config_path = build_mock_config(tmp_path)
     metrics = run_mmeb_eval(config_path, dry_run=True)
-    assert "colqwen2" in metrics
-    toy_metrics = metrics["colqwen2"]["toy_task"]
+    assert "nemoretriever" in metrics
+    toy_metrics = metrics["nemoretriever"]["toy_task"]
     assert 0.0 <= toy_metrics["precision@1"] <= 1.0
     assert toy_metrics["total_queries"] == 2

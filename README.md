@@ -155,12 +155,12 @@ DDP inference on multiple GPUs is supported. The whole evaluation process is str
 
 ## Multi-Vector Retriever Evaluation Add-on
 
-Alongside the core VLM2Vec release, this repository now ships with a Colab-first workflow focused on reproducing the "More Retriever Implementations for Latest Multi-Vector Models" effort. It delivers production-grade retriever wrappers, a resumable MMEB-V2 benchmarking harness, pinned configuration presets, and rigorous validation for multi-vector scoring.
+Alongside the core VLM2Vec release, this repository now ships with a Colab-first workflow focused on benchmarking NVIDIA's NemoRetriever Colembed 3B on MMEB-V2. It delivers a production-grade retriever wrapper, a resumable MMEB-V2 benchmarking harness, pinned configuration presets, and rigorous validation for multi-vector scoring.
 
 ### Highlights
 
-- **Retriever implementations** for Vidore ColQwen2.5, NVIDIA NemoRetriever Colembed 3B, and Nomic ColNomic 3B, including hybrid multi-/single-vector support.
-- **Processor resilience** that automatically patches ColQwen2 pre-processing and swaps to a slow tokenizer when needed (no manual `sed` or hub edits required in Colab).
+- **Retriever implementation** for NVIDIA NemoRetriever Colembed 3B with dry-run utilities for fast validation.
+- **Lightweight configuration** tuned for A100 or L4 runtimes, with quick smoke and full-run presets.
 - **Scoring utilities** implementing MaxSim late interaction, hybrid scoring, static padding, and optional hierarchical token compression.
 - **Caching and resume tooling** with SHA-256 keyed Torch caches, disk persistence, and Google Drive-friendly resume metadata.
 - **Evaluation harness** that pre-encodes candidates, streams MMEB-V2 partitions, and aggregates Precision@1 metrics with CSV/JSON exports.
@@ -175,7 +175,7 @@ Alongside the core VLM2Vec release, this repository now ships with a Colab-first
    pip install -e .
    ```
 
-  > Verify `transformers` resolves to **4.57.1 or newer**; older wheels (≤4.44) do not ship the Qwen2VL image processor required by ColQwen2.
+  > Verify `transformers` resolves to **4.57.1 or newer** to ensure compatibility with the NemoRetriever pipeline.
 
 2. **Run the synthetic integration tests** to verify the environment:
 
@@ -193,9 +193,7 @@ configs/
   mmeb_quick_smoke.yaml     # Smoke preset for validation / L4 fallback
 src/retriever/
   base.py                   # Abstract retriever base class
-  colqwen2.py               # Vidore ColQwen2 multi-vector wrapper
   nemoretriever.py          # NVIDIA Nemo multi-vector wrapper
-  colnomic.py               # Nomic ColNomic hybrid retriever
   scoring.py                # MaxSim, dot-product, hybrid scorers
   memory.py                 # Cache + resume utilities
   compression.py            # Optional hierarchical pooling
@@ -213,7 +211,7 @@ outputs/
 ### Colab Workflow Highlights
 
 - Verifies GPU capability, pins CUDA-enabled PyTorch, Transformers (with `trust_remote_code`), and model-specific dependencies.
-- Uses Transformers 4.57.1+ so the official Qwen2VL image processor is available without manual patches.
+- Uses Transformers 4.57.1+ to match the NemoRetriever dependencies out of the box.
 - Mounts Google Drive, prepares `/content/work`, persists caches/logs between sessions, and provides resume hints.
 - Materialises project files, prepares smoke/full config presets, and emits metrics in JSON/CSV plus an optional zipped bundle of artefacts.
 

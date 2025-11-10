@@ -167,7 +167,7 @@ class TrainTextImageDataset(Dataset):
         for qry_text, qry_image_path, pos_text, pos_image_path, neg_text, neg_image_path \
             in zip(qry_texts, qry_image_paths, pos_texts, pos_image_paths, neg_texts, neg_image_paths):
             # instructions were hardcoded with Phi3 image special tokens
-            # Update image token for llava and colqwen2
+            # Update image token for non-Phi3V backbones
             if backbone != PHI3V:
                 qry_text = qry_text.replace(VLM_IMAGE_TOKENS[PHI3V], VLM_IMAGE_TOKENS[backbone])
                 pos_text = pos_text.replace(VLM_IMAGE_TOKENS[PHI3V], VLM_IMAGE_TOKENS[backbone])
