@@ -7,6 +7,7 @@ import math
 import os
 import random
 import shutil
+import sys
 import time
 from dataclasses import dataclass, field
 from importlib import import_module
@@ -17,6 +18,13 @@ import torch
 import yaml
 
 from packaging import version
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = PROJECT_ROOT / "src"
+if SRC_ROOT.exists():
+    src_path = str(SRC_ROOT)
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
 
 from retriever import BaseRetriever, scoring
 from retriever.memory import CacheManager, ResumeManager, chunk_iterable, estimate_vram_usage
