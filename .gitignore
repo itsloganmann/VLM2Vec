@@ -13,6 +13,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+*.egg
 
 # Notebook checkpoints
 .ipynb_checkpoints/
