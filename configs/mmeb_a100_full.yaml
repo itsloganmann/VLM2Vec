@@ -3,7 +3,7 @@ run:
   name: mmeb-a100-full
   precision: bf16
   quick_subset:
-    enabled: false
+    enabled: false         # set true for smoke test to avoid full downloads
     max_queries: 0
     max_candidates: 0
   output_root: "${OUTPUT_ROOT}"
@@ -26,12 +26,14 @@ models:
     document_batch_size: 10
     calibration: true
     pooling: none
+    # Optional: pin a specific snapshot if needed (passed to retriever as revision)
+    # snapshot_revision: main
 
 data:
   repo_id: TIGER-Lab/MMEB-V2
   local_root: "${DATA_ROOT}"
-  download: true
-  streaming: false
+  download: false          # when streaming, don't pre-download giant tar shards
+  streaming: true          # fixes tarfile errors; stream shards instead of extracting
   num_workers: 4
   quick_sample_per_task: 64
   image_column: image
@@ -39,8 +41,8 @@ data:
   tasks:
     - name: mmeb_visual_document
       type: visual_document
-      subset: docvqa
-      split: validation
+      subset: default      # MMEB-V2 exposes 'default' config
+      split: train         # streaming exposes only 'train'
       id_column: query_id
       query_column: query
       image_column: image
@@ -49,8 +51,8 @@ data:
       max_candidates: 2048
     - name: mmeb_image_text
       type: image_text
-      subset: retrieval
-      split: validation
+      subset: default
+      split: train         # streaming exposes only 'train'
       id_column: query_id
       query_column: query
       image_column: image
