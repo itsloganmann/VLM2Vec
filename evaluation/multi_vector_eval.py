@@ -214,41 +214,6 @@ def _validate_environment(run_cfg: RunConfig, *, strict: bool = True) -> None:
 
     torch_version = version.parse(torch.__version__)
     transformers_version = version.parse(transformers.__version__)
-    if torch_version < version.parse(MIN_TORCH_VERSION):
-        message = (
-            f"Detected torch {torch.__version__}; minimum supported version is {MIN_TORCH_VERSION}. "
-            "Refer to https://pytorch.org/get-started/locally/ for upgrade instructions."
-        )
-        if strict:
-            raise RuntimeError(message)
-        LOGGER.warning(message)
-    if transformers_version < version.parse(MIN_TRANSFORMERS_VERSION):
-        message = (
-            f"Detected transformers {transformers.__version__}; minimum supported version is {MIN_TRANSFORMERS_VERSION}. "
-            "See https://huggingface.co/docs/transformers/installation for upgrade guidance."
-        )
-        if strict:
-            raise RuntimeError(message)
-        LOGGER.warning(message)
-    try:
-        torch.backends.cuda.matmul.allow_tf32 = True  # type: ignore[attr-defined]
-        torch.backends.cudnn.allow_tf32 = True  # type: ignore[attr-defined]
-    except AttributeError:
-        LOGGER.debug("TF32 toggles unavailable in this torch build")
-    try:
-        torch.set_float32_matmul_precision("high")
-    except AttributeError:
-        LOGGER.debug("torch.set_float32_matmul_precision unavailable; continuing")
-    if torch.cuda.is_available():
-        gpu_name = torch.cuda.get_device_name(0)
-        LOGGER.info("Primary GPU: %s", gpu_name)
-        if EXPECTED_GPU_SUBSTRING not in gpu_name:
-            LOGGER.warning("Expected an NVIDIA A100 GPU but detected %s", gpu_name)
-    else:
-        LOGGER.warning("CUDA is not available; evaluation will fall back to CPU and run significantly slower")
-    snapshot_home = run_cfg.model_snapshot_root
-    snapshot_home.mkdir(parents=True, exist_ok=True)
-    summary = _materialize_disk_summary(snapshot_home)
     if summary["free_gb"] < DEFAULT_MIN_DISK_GB:
         raise RuntimeError(
             f"Insufficient free disk space at {snapshot_home} ({summary['free_gb']:.1f} GiB). "
