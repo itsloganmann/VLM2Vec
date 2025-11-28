@@ -214,6 +214,9 @@ def _validate_environment(run_cfg: RunConfig, *, strict: bool = True) -> None:
 
     torch_version = version.parse(torch.__version__)
     transformers_version = version.parse(transformers.__version__)
+    snapshot_home = run_cfg.model_snapshot_root
+    snapshot_home.mkdir(parents=True, exist_ok=True)
+    summary = _materialize_disk_summary(snapshot_home)
     if summary["free_gb"] < DEFAULT_MIN_DISK_GB:
         message = (
             f"Insufficient free disk space at {snapshot_home} ({summary['free_gb']:.1f} GiB). "
